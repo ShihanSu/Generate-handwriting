@@ -41,21 +41,22 @@ class SynNN(torch.nn.Module):
 		hidden2 = hidden[2]
 		lastk = hidden[3]                   # dim(char_len, 10)
 	
-		points = torch.squeeze(points)      # dim(batch, 3)
 		# concatenate sequence of input tensor
-		#print (points.size())
-		#print (window.data.size())
-		input1 = Variable(torch.cat([points, window.data], 1))
+		input1 = torch.cat([points, window], 1)
 		output1 = self.hidden1(input1, hidden1)
 		window, lastk = self.window(output1, chars, lastk)
 		output2 = self.hidden2(window, hidden2)  # dim(batch, 121)
 		
 		hidden = [output1, window, output2, lastk]
 		if output2.size()[0] != 0:
-			output2.unsqueeze_(0)                  # dim(1, batch, 121)
+			output2.unsqueeze(0)                   # dim(1, batch, 121)
 		return output2, hidden
 		
 	def initialize(self, char_len):
+		''' 
+		Initialize for each batch
+		char_len is length of char batch
+		'''
 		hidden1_ini = Variable(torch.zeros(self.batch_size, self.hidden_size))
 		window_ini = Variable(torch.zeros(self.batch_size, self.n_alphabet))
 		hidden2_ini = Variable(torch.zeros(self.batch_size, self.output_size))
@@ -87,33 +88,33 @@ class Window(nn.Module):
 		initial = initial + bias
 		
 		# unpack a, b, k
-		alpha, beta, k = torch.split(initial, self.u*self.k, dim = 1)  # dim(batch_size, ku)
-		
+		alpha_h, beta_h, k_h = torch.split(initial, self.u*self.k, dim = 1)  # dim(batch_size, u*k)
 		batch_size = initial.size()[0]
 				
-		# exp
-		alpha = alpha.resize(batch_size, self.u, self.k)               # dim(batch, u, k)
-		beta = beta.resize(batch_size, self.u, self.k)
-		k = k.resize(batch_size, self.u, self.k)
+		# reshape
+		alpha_ = alpha_h.contiguous().view(batch_size, self.u, self.k)        # dim(batch, u, k)
+		beta_ = beta_h.contiguous().view(batch_size, self.u, self.k)
+		k_ = k_h.contiguous().view(batch_size, self.u, self.k)
 		
-		# slice parameters according to chars length
+		# slice parameters according to chars length and exp
 		char_len = chars.size()[1]
-		alpha = alpha[:, 0:char_len, :].exp()
-		beta = beta[:, 0:char_len, :].exp()
-		k = k[:, 0:char_len, :].exp()
-		
+		alpha = alpha_[:, 0:char_len, :].exp()
+		beta = beta_[:, 0:char_len, :].exp()
+		k = k_[:, 0:char_len, :].exp()
+
 		lastk = lastk.expand_as(k)                                     # lastk(1, char_len, k)
-		k = k + lastk
+		k = k + lastk                                                  # dim(batch, char_len, k)
 		
 		# phi
-		u = Variable(torch.range(0, char_len - 1).resize_(char_len, 1).expand_as(k))
-		exp_part = torch.exp(-torch.mul(beta, torch.pow(k - u, 2))) # dim(batch, char_len, k)
-		phi = torch.sum(torch.mul(alpha,exp_part), dim = 2)              # sum over k, dim(batch, char_len, 1)
-		phi = torch.transpose(phi, 1, 2)                                      # dim(batch, 1, char_len)
+
+		u = Variable(torch.range(0, char_len - 1).view(char_len, 1).expand_as(k))
+		exp_part = torch.exp(-torch.mul(beta, torch.pow(k - u, 2)))    # dim(batch, char_len, k)
+		phi = torch.sum(torch.mul(alpha,exp_part), dim = 2)            # sum over k, dim(batch, char_len, 1)
+		phi = torch.transpose(phi, 1, 2)                               # dim(batch, 1, char_len)
 		
 		# w
-		w = torch.bmm(phi, Variable(chars))                           # dim(batch, 1, 77)
-		w = torch.squeeze(w)                                          # dim(batch, 77)
+		w = torch.bmm(phi, chars)                                      # dim(batch, 1, 77)
+		w = torch.squeeze(w)                                           # dim(batch, 77)
 		return w, k
 
 
