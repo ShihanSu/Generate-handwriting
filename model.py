@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 class SynNN(torch.nn.Module):
-	def __init__(self, input_size, hidden_size, output_size, max_charlen, n_alphabet, numMixture, batch_size):
+	def __init__(self, input_size, hidden_size, output_size, n_alphabet, numMixture, batch_size):
 		'''
 		Constructor that specify layers of the network for each time step
 		The same module will be used to process every point in sequence.
@@ -15,12 +15,11 @@ class SynNN(torch.nn.Module):
 		self.input_size = input_size
 		self.output_size = output_size
 		self.numMixture = numMixture
-		self.max_charlen = max_charlen    # length of longest input sequence
 		self.n_alphabet = n_alphabet      # 77
 		
 		# architecture
 		self.hidden1 = nn.GRUCell(self.input_size + self.n_alphabet, self.hidden_size, bias = True)
-		self.window = Window(self.hidden_size, self.max_charlen, self.numMixture)
+		self.window = Window(self.hidden_size, self.numMixture)
 		self.hidden2 = nn.GRUCell(self.n_alphabet, self.output_size, bias = True)
 
 
@@ -52,16 +51,14 @@ class SynNN(torch.nn.Module):
 			output2.unsqueeze(0)                   # dim(1, batch, 121)
 		return output2, hidden
 		
-	def initialize(self, char_len):
+	def initialize(self):
 		''' 
 		Initialize for each batch
-		char_len is length of char batch
 		'''
 		hidden1_ini = Variable(torch.zeros(self.batch_size, self.hidden_size))
 		window_ini = Variable(torch.zeros(self.batch_size, self.n_alphabet))
 		hidden2_ini = Variable(torch.zeros(self.batch_size, self.output_size))
-		k_ini = Variable(torch.zeros(1, char_len, self.numMixture))
-
+		k_ini = Variable(torch.zeros(self.batch_size, self.numMixture))
 		return (hidden1_ini, window_ini, hidden2_ini, k_ini)
 
 
@@ -69,12 +66,11 @@ class Window(nn.Module):
 	''' 
 	Define the calculation for window layer.
 	'''
-	def __init__(self, hidden_size, max_charlen, numMixture):
+	def __init__(self, hidden_size, numMixture):
 		super(Window, self).__init__()
-		self.u = max_charlen   # the maximum of char sequence length in the data
 		self.k = numMixture
-		self.weight = nn.Parameter(torch.FloatTensor(hidden_size, 3*self.u*self.k)) # 3 for a,b,k
-		self.bias = nn.Parameter(torch.FloatTensor(1, 3*self.u*self.k))
+		self.weight = nn.Parameter(torch.FloatTensor(hidden_size, 3*self.k)) # 3 for a,b,k
+		self.bias = nn.Parameter(torch.FloatTensor(1, 3*self.k))
 
 	def forward(self, hidden, chars, lastk):
 		'''
@@ -88,29 +84,26 @@ class Window(nn.Module):
 		initial = initial + bias
 		
 		# unpack a, b, k
-		alpha_h, beta_h, k_h = torch.split(initial, self.u*self.k, dim = 1)  # dim(batch_size, u*k)
+		alpha_h, beta_h, k_h = torch.split(initial, self.k, dim = 1)   # dim(batch_size, k)
 		batch_size = initial.size()[0]
-				
-		# reshape
-		alpha_ = alpha_h.contiguous().view(batch_size, self.u, self.k)        # dim(batch, u, k)
-		beta_ = beta_h.contiguous().view(batch_size, self.u, self.k)
-		k_ = k_h.contiguous().view(batch_size, self.u, self.k)
 		
-		# slice parameters according to chars length and exp
+		# expand to (b, k, u)
+		#char_len = char_len.transpose(0, 1)
 		char_len = chars.size()[1]
-		alpha = alpha_[:, 0:char_len, :].exp()
-		beta = beta_[:, 0:char_len, :].exp()
-		k = k_[:, 0:char_len, :].exp()
-
-		lastk = lastk.expand_as(k)                                     # lastk(1, char_len, k)
-		k = k + lastk                                                  # dim(batch, char_len, k)
+		alpha = alpha_h.expand(char_len, batch_size, self.k).exp()
+		beta = beta_h.expand(char_len, batch_size, self.k).exp()
+		k = k_h.expand(char_len, batch_size, self.k).exp()              # dim(u, b, k)
+		
+		lastk = lastk.expand_as(k)                                     # lastk(b, k)
+		k = k + lastk                                                  # dim(u, batch, k)
 		
 		# phi
-
-		u = Variable(torch.range(0, char_len - 1).view(char_len, 1).expand_as(k))
-		exp_part = torch.exp(-torch.mul(beta, torch.pow(k - u, 2)))    # dim(batch, char_len, k)
-		phi = torch.sum(torch.mul(alpha,exp_part), dim = 2)            # sum over k, dim(batch, char_len, 1)
-		phi = torch.transpose(phi, 1, 2)                               # dim(batch, 1, char_len)
+		u_ = Variable(torch.range(0, char_len - 1).view(char_len, 1).expand(char_len, self.k))   # dim(u, k)
+		u = u_.unsqueeze(1).expand_as(k)                               # dim(u, b, k)
+		exp_part = torch.exp(-torch.mul(beta, torch.pow(k - u, 2)))    # dim(u, b, k)
+		phi_ = torch.sum(torch.mul(alpha, exp_part), dim = 2)          # sum over k, dim(u, b, 1)
+		phi = phi_.transpose(0, 1).transpose(1, 2)                     # dim(b, 1, u)
+		
 		
 		# w
 		w = torch.bmm(phi, chars)                                      # dim(batch, 1, 77)

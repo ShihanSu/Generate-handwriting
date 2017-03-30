@@ -5,6 +5,7 @@ import pickle
 import torch
 import xml.etree.ElementTree as ET
 from torch.autograd import Variable
+import torch.nn.utils as utils
 
 class Loader():
 	def __init__(self, batch_size = 50):
@@ -19,35 +20,41 @@ class Loader():
 		self.n_alphabet = 0            # num of unique alphabet in chars
 		self.n_batch = 0               # num of total batches in the data
 	
-	def load(self):
+	def load(self, mode):
 		''' 
 		A private method to Load entire dataset and save it into binary form
 		'''
 		binaryf_path = os.path.join(self.data_dir, 'training_data.cpkl')
 		alphabet_path = os.path.join(self.data_dir, 'alphabet.cpkl')
-	
-		if not os.path.exists(binaryf_path):
-			print ('Creating training data pkl file from raw source')
-			#specify data and text path
-			data_path = self.data_dir + '/lineStrokes'
-			text_path = self.data_dir + '/original'
-			
-			# load seq-character dictionary
-			textlist = self.__listxml(text_path)
-			self.__loaddict(textlist)
-			
-			# load data
-			datalist = self.__listxml(data_path)
-			points = self.__readxml(datalist)
-			data = self.__points2array(points)
-			
-			# sort data according to sequence length
-			data = self.__sort(data)
-			
-			# save data
-			self.__save2binary(data, self.alphabet, binaryf_path, alphabet_path)
+		test_path = os.path.join(self.data_dir, 'test_data.cpkl')
 		
-		self.data = self.__reload(binaryf_path)
+		if mode == 'test':
+			self.data = self.__reload(test_path)
+		
+		else:
+			if not os.path.exists(binaryf_path):
+				print ('Creating training data pkl file from raw source')
+				#specify data and text path
+				data_path = self.data_dir + '/lineStrokes'
+				text_path = self.data_dir + '/original'
+				
+				# load seq-character dictionary
+				textlist = self.__listxml(text_path)
+				self.__loaddict(textlist)
+				
+				# load data
+				datalist = self.__listxml(data_path)
+				points = self.__readxml(datalist)
+				data = self.__points2array(points)
+				
+				# sort data according to sequence length
+				data = self.__sort(data)
+				
+				# save data
+				self.__save2binary(data, self.alphabet, binaryf_path, alphabet_path)
+		
+			self.data = self.__reload(binaryf_path)
+			
 		self.alphabet = self.__reload(alphabet_path)
 		self.max_charlen = max([len(x[1]) for x in self.data]) + 1       # match with padding size
 		self.n_alphabet = len(self.alphabet)
@@ -215,6 +222,11 @@ class Loader():
 		points = [instance[0] for instance in input]
 		chars = [instance[1] for instance in input]
 		
+		# create length list
+		#points_len = [len(tensor)+1 for tensor in points]
+		#chars_len = [len(tensor)+1 for tensor in chars]
+
+		
 		# max length
 		max_len = points[0].size()[0] + 1      # +1 so that the first sequence can also be padded
 		max_charlen = max([char.size()[0] for char in chars]) + 1
@@ -229,6 +241,10 @@ class Loader():
 		# pad points and chars
 		padded_points = Variable(torch.cat([self.__pad(tensor, max_len) for tensor in points]))
 		padded_chars = Variable(torch.cat([self.__pad(tensor, max_charlen) for tensor in chars]))
+		
+		# pack sequence
+		#pack_points = utils.rnn.pack_padded_sequence(padded_points, points_len, batch_first = True)
+		#pack_chars = utils.rnn.pack_padded_sequence(padded_chars, chars_len, batch_first = True)
 		return padded_points, padded_chars
 
 

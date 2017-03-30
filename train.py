@@ -7,6 +7,12 @@ import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.utils as utils
 
+###### Things to change in real training mode ########
+# print_every
+# save_every
+# loader.load()
+# print message batch, add % completion for batch/n_batch in one epoch
+
 def train(points, chars, generate = 0):
 	'''
 	Gradient update for every batch of data
@@ -15,7 +21,7 @@ def train(points, chars, generate = 0):
 	points_t = points.transpose(0, 1)
 	seq_len = points_t.size()[0]
 	char_len = chars.size()[1]   # dim(char) = batch, seq_len, *
-	hidden = model_.initialize(char_len)
+	hidden = model_.initialize()
 	
 	outputs = []
 	for i in range(seq_len):
@@ -34,7 +40,7 @@ def train(points, chars, generate = 0):
 		loss.backward()
 		
 		# clip gradients
-		utils.clip_grad_norm(model_.parameters(), max_norm = 50, norm_type = 2)
+		utils.clip_grad_norm(model_.parameters(), max_norm = 0.1, norm_type = 2)
 
 		optimizer.step()
 		return loss
@@ -50,8 +56,8 @@ def timesince(since):
 	h = 60*60      # hour = seconds
 	m = 60          # minimute = secondes
 	hour = s//h
-	mimute = (s - hour*h)//m
-	s -= hour*h + minute*model
+	minute = (s - hour*h)//m
+	s -= hour*h + minute*m
 
 	return '%dh %dm %ds' % (hour, minute, s)
 
@@ -59,22 +65,22 @@ def timesince(since):
 # parameters
 n_epoch = 30
 batch_size = 50
-print_every = 10
 input_size = 3
 n_Mixture = 20     # for points
 hidden_size = 400
 output_size = 6*n_Mixture + 1
 numMixture = 10    # for character sequence
+print_every = 1
 save_every = 1
 
 
 # Load Data
 
 loader = datahp.Loader(batch_size)
-loader.load()
+loader.load('test')
 
 # Build Model
-model_ = model.SynNN(input_size, hidden_size, output_size, loader.max_charlen, loader.n_alphabet, numMixture, batch_size)
+model_ = model.SynNN(input_size, hidden_size, output_size, loader.n_alphabet, numMixture, batch_size)
 
 # specify optimizer
 optimizer = torch.optim.RMSprop(model_.parameters(), alpha = 0.95, eps = 0.0001)
@@ -91,7 +97,7 @@ for epoch in range(n_epoch):
 	loader.reset()
 	total_loss = 0
 
-	for batch in range(loader.n_batch):
+	for batch in range(2):
 		input = loader.next_batch()
 		points, chars = loader.padded(input) # dim(batch, seq_len, *)
 		
@@ -103,15 +109,17 @@ for epoch in range(n_epoch):
 		# Print out progress information
 		if batch % print_every == 0:
 			print (
-				"epoch{} {} batch{} {} {} loss = {:.3f}" \
+				"epoch{} batch{} time since start {} batch loss = {:.3f}" \
 				.format(
-					epoch, epoch/n_epoch * 100, batch, batch/batch_size*100,
-					timesince(start), loss)
+					epoch, batch,
+					timesince(start),
+					loss.data[0])
 				)
-	print ('epoch{} loss = {:.3f}'.format(epoch, total_loss))
+	print ('epoch{} epoch loss = {:.3f}'.format(epoch, total_loss.data[0]))
 	
 	if epoch % save_every == 0:
-		torch.save(model_,'synNN.pt' )
+		print ('saving model epoch ', epoch )
+		torch.save(model_.state_dict(),'synNN.pt' )
 
 
 
