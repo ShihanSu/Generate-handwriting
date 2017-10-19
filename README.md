@@ -2,14 +2,14 @@
 An attempt to implement the random handwriting generation portion of Alex Graves'[paper][1] using Pytorch.
 
 ## Requirement
-Pytorch \\
-xml.etree.ElementTree\\
-Numpy
+1. Pytorch 
+2. xml.etree.ElementTree
+3. Numpy
 
 ## Files
-datahp.py Load data and put in the right format\\
-model.py  Model formulation\\
-train.py  Train and save the model
+1. datahp.py Load data and put in the right format
+2. model.py  Model formulation
+3. train.py  Train and save the model
 
 ## Data
 You need to [register][2] on the website in order to get the IAM On-Line Handwriting data. 
