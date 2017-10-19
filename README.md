@@ -1,4 +1,4 @@
-# sequence-pytorch
+# Generative Handwriting using Pytorch
 An attempt to implement the random handwriting generation portion of Alex Graves'[paper][1].
 
 
